@@ -63,3 +63,80 @@ plt.show()
 
 
 
+coords = holes[["XCOLLAR", "YCOLLAR"]].values
+values = holes["NI_MEAN"].values
+
+fig, ax = plt.subplots(1, 1, num="Experimental variogram")
+
+hexp, gexp, cexp = gn.covModel.variogramExp1D(coords, values,
+                                              ncla=20,
+                                              make_plot=True,
+                                              hmax=1000)
+ax.set_ylim(0)
+plt.show()
+
+
+print(f"Data variance: {np.var(values):.3f} [%^2]")
+model = [("nugget", {"w": 0.002}),
+         ("spherical", {"w": 0.048, "r": 380})]
+
+cov_model = gn.covModel.CovModel1D(elem=model, name="model")
+
+with open("01_OK_variogram-model.pkl", "wb") as file:
+    pickle.dump(cov_model, file)
+    
+    hmax = 1000
+
+fig, ax = plt.subplots(1, 1, num="Variogram fit", figsize=(8, 6))
+hexp, gexp, cexp = gn.covModel.variogramExp1D(coords, values,
+                                              ncla=20,
+                                              make_plot=True,
+                                              hmax=hmax)
+
+cov_model.plot_model(vario=True, label="variogram model", hmax=hmax)
+ax.set_ylim(0)
+plt.legend()
+plt.show()
+
+x = holes["XCOLLAR"].to_numpy()
+y = holes["YCOLLAR"].to_numpy()
+
+dx = dy = 25                # cell size [m]
+ox = x.min() - 100          # grid origin, with a 100 m margin
+oy = y.min() - 100
+nx = int((x.max() - x.min() + 200) / dx)
+ny = int((y.max() - y.min() + 200) / dy)
+
+x_est, y_est = np.meshgrid(np.linspace(ox+0.5*dx, ox-0.5*dx+nx*dx, nx),
+                           np.linspace(oy+0.5*dy, oy-0.5*dy+ny*dy, ny))
+
+xy_est = np.stack((x_est.ravel(), y_est.ravel()), axis=-1)
+print(nx, ny, xy_est.shape)
+
+
+
+
+vu, vu_std = gn.covModel.krige(coords, values, xy_est, cov_model,
+                               method="ordinary_kriging")
+ni_est = vu.reshape(x_est.shape)
+ni_std = vu_std.reshape(x_est.shape)
+
+extent = (x_est.min(), x_est.max(), y_est.min(), y_est.max())
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 7))
+im = ax.imshow(ni_est, origin="lower", extent=extent)
+fig.colorbar(im, ax=ax, label="Ni [%]")
+ax.scatter(x, y, marker="x", color="white", s=8)
+ax.set_title("Ordinary kriging: mean Ni")
+ax.set_xlabel("x [m]")
+ax.set_ylabel("y [m]")
+plt.show()
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 7))
+im = ax.imshow(ni_std, origin="lower", extent=extent)
+fig.colorbar(im, ax=ax, label="Std [%]")
+ax.scatter(x, y, marker="x", color="white", s=8)
+ax.set_title("Kriging standard deviation")
+fig.savefig("figures/kriging_map.png", dpi=150)
+plt.show()
+
